@@ -28,4 +28,4 @@ spec:
       - kind: ConfigMap
         name: project-me-cms-api-prod-config
     substitute:
-      APP_IMAGE_TAG: "81-47e63ce-amd64"
+      APP_IMAGE_TAG: "staging-681e755"

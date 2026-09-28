@@ -28,4 +28,4 @@ spec:
       - kind: ConfigMap
         name: project-me-cms-admin-prod-config
     substitute:
-      APP_IMAGE_TAG: "dev"
+      APP_IMAGE_TAG: "staging-681e755"
