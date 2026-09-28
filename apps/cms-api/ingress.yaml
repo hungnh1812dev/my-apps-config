@@ -1,0 +1,34 @@
+# Public HTTPS entry for cms-api on the k3s-bundled Traefik, at api.${APP_DOMAIN}. The bare domain
+# is for the frontend and admin.<domain> is for cms-admin. All paths go to the Service.
+# cert-manager issues the <svc>-<env>-tls certificate from the ClusterIssuer in
+# ${APP_TLS_CLUSTER_ISSUER}. If APP_DOMAIN is missing, Flux substitutes "" and the host becomes
+# "api.", which the API server rejects, so the Flux apply fails instead of exposing a catch-all.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ${APP_SERVICE_NAME}-${APP_ENV}
+  namespace: ${APP_NAMESPACE}-${APP_ENV}
+  labels:
+    app.kubernetes.io/name: ${APP_NAME}-${APP_SERVICE_NAME}-${APP_ENV}
+  annotations:
+    cert-manager.io/cluster-issuer: ${APP_TLS_CLUSTER_ISSUER}
+    # <middleware namespace>-<middleware name>@kubernetescrd, see middleware.yaml.
+    traefik.ingress.kubernetes.io/router.middlewares: ${APP_NAMESPACE}-${APP_ENV}-${APP_SERVICE_NAME}-${APP_ENV}-https-redirect@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - api.${APP_DOMAIN}
+      secretName: ${APP_SERVICE_NAME}-${APP_ENV}-tls
+  rules:
+    - host: api.${APP_DOMAIN}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ${APP_SERVICE_NAME}-${APP_ENV}
+                # The Service's named port, so no numeric ${APP_PORT} lands here.
+                port:
+                  name: http

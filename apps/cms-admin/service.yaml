@@ -1,0 +1,16 @@
+# cms-admin ClusterIP Service on port 80, selecting the Deployment's pods.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${APP_SERVICE_NAME}-${APP_ENV}
+  namespace: ${APP_NAMESPACE}-${APP_ENV}
+  labels:
+    app.kubernetes.io/name: ${APP_NAME}-${APP_SERVICE_NAME}-${APP_ENV}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ${APP_NAME}-${APP_SERVICE_NAME}-${APP_ENV}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
