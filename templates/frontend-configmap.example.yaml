@@ -1,0 +1,28 @@
+# frontend ConfigMap template: the ${APP_*} values only the frontend uses. The values shared by all
+# three apps (name, namespace, env, domain, TLS issuer) are in templates/shared-configmap.example.yaml;
+# cluster/me/frontend-sync.yaml reads that first and this second (postBuild.substituteFrom, which only
+# reads flux-system), so a key set here overrides the shared one.
+# Placeholders only; never commit real values. Created by hand on the cluster, after the shared
+# ConfigMap and before the frontend's first Flux deploy:
+#   cp templates/frontend-configmap.example.yaml templates/frontend-configmap.yaml   # gitignored; fill in values
+#   kubectl apply --server-side -f templates/frontend-configmap.yaml
+# Fill metadata.name so it equals the second substituteFrom ConfigMap in
+# cluster/me/frontend-sync.yaml (project-me-frontend-prod-config).
+# Derived names: namespace <APP_NAMESPACE>-<APP_ENV>, resources <APP_SERVICE_NAME>-<APP_ENV>.
+# Runtime settings and secrets are NOT here: they go in the Secret (templates/frontend-secret.example.yaml).
+# The public GraphQL URL for the health check is baked into the image from the FRONTEND_GRAPHQL_URL
+# variable in the app repository. Quote every value (e.g. "3000"): ConfigMap data must be strings.
+# After a change, re-apply and run `flux reconcile kustomization project-me-frontend-sync-prod`.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: <app-name>-<app-service-name>-<app-env>-config
+  namespace: flux-system
+data:
+  # Service within the application (resources are named <APP_SERVICE_NAME>-<APP_ENV>)
+  APP_SERVICE_NAME: "<app-service-name>"
+  # Image repository without a tag (image <repo>:<tag>)
+  APP_IMAGE_REPO: "<registry/owner/repo/image>"
+  # Container + Service port. Must equal the image's PORT (3000 today); it doesn't change what Next
+  # listens on.
+  APP_PORT: "<port>"

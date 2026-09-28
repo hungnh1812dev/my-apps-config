@@ -1,0 +1,31 @@
+# cms-admin in prod: applies ./apps/cms-admin with ${APP_*} from the shared ConfigMap, then the
+# cms-admin ConfigMap (a key in both takes the cms-admin value). APP_IMAGE_TAG is committed to main by
+# the app repository after it pushes a new image; Flux applies it on its next poll. Keep exactly one
+# `APP_IMAGE_TAG:` line: the app repository rewrites it.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: project-me-cms-admin-sync-prod
+  namespace: flux-system
+spec:
+  interval: 3m
+  # A failed apply is retried sooner than the next interval.
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  # Includes the public Traefik Ingress at admin.<domain>. Needs APP_DOMAIN and
+  # APP_TLS_CLUSTER_ISSUER in the shared ConfigMap before this reaches the cluster.
+  path: ./apps/cms-admin
+  prune: true
+  wait: true
+  timeout: 5m
+  postBuild:
+    # Both ConfigMaps must exist: a missing one fails the Kustomization instead of rendering empty names.
+    substituteFrom:
+      - kind: ConfigMap
+        name: project-me-prod-shared-config
+      - kind: ConfigMap
+        name: project-me-cms-admin-prod-config
+    substitute:
+      APP_IMAGE_TAG: "dev"

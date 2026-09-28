@@ -1,0 +1,29 @@
+# Shared project-info ConfigMap template: the ${APP_*} values that cms-api, cms-admin and frontend
+# all use. Every sync file in cluster/me reads this first and its own per-app ConfigMap second
+# (postBuild.substituteFrom, which only reads flux-system), so a per-app key would override one here.
+# Placeholders only; never commit real values. Created by hand on the cluster BEFORE the per-app
+# ConfigMaps and before any app's first Flux deploy:
+#   cp templates/shared-configmap.example.yaml templates/shared-configmap.yaml   # gitignored; fill in values
+#   kubectl apply --server-side -f templates/shared-configmap.yaml
+# metadata.name is fixed: it must match the first substituteFrom ConfigMap in every
+# cluster/me/*-sync.yaml. If it's missing, all three Kustomizations fail instead of rendering empty names.
+# Derived names: namespace <APP_NAMESPACE>-<APP_ENV>, resources <APP_SERVICE_NAME>-<APP_ENV>.
+# Quote every value: ConfigMap data must be strings. After a change, re-apply and reconcile each app:
+#   flux reconcile kustomization project-me-<svc>-sync-prod
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: <app-name>-<app-env>-shared-config
+  namespace: flux-system
+data:
+  # Application / product name (used in the app.kubernetes.io/name label)
+  APP_NAME: "<app-name>"
+  # Base namespace (all three apps run in <APP_NAMESPACE>-<APP_ENV>)
+  APP_NAMESPACE: "<app-namespace>"
+  # Environment, e.g. prod
+  APP_ENV: "<app-env>"
+  # Bare domain, no scheme or subdomain. frontend is served at <APP_DOMAIN>, cms-admin at
+  # admin.<APP_DOMAIN>, cms-api at api.<APP_DOMAIN>. Set it BEFORE the first Flux apply.
+  APP_DOMAIN: "<example.com>"
+  # cert-manager ClusterIssuer that issues every app's TLS certificate
+  APP_TLS_CLUSTER_ISSUER: "<cluster-issuer-name>"

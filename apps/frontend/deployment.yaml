@@ -1,0 +1,75 @@
+# frontend Deployment: the Next.js standalone server (built from the app repository's
+# apps/frontend/Dockerfile). Runtime config and secrets come from the hand-made
+# <svc>-<env>-secrets Secret via envFrom (template: templates/frontend-secret.example.yaml).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${APP_SERVICE_NAME}-${APP_ENV}
+  namespace: ${APP_NAMESPACE}-${APP_ENV}
+  labels:
+    app.kubernetes.io/name: ${APP_NAME}-${APP_SERVICE_NAME}-${APP_ENV}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ${APP_NAME}-${APP_SERVICE_NAME}-${APP_ENV}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ${APP_NAME}-${APP_SERVICE_NAME}-${APP_ENV}
+    spec:
+      # The app never calls the Kubernetes API, so it gets no service-account token.
+      automountServiceAccountToken: false
+      # No runAsNonRoot yet: it depends on the image's USER (set in the app repo's Dockerfile), and
+      # a root image would then fail to start. See docs/AUDIT.md.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: app
+          image: ${APP_IMAGE_REPO}:${APP_IMAGE_TAG}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          # The image sets PORT (3000) and Next listens there. APP_PORT only tells Kubernetes that port,
+          # so it must equal the image's PORT. Unquoted on purpose: ports must be ints after substitution.
+          ports:
+            - name: http
+              containerPort: ${APP_PORT}
+          envFrom:
+            - secretRef:
+                name: ${APP_SERVICE_NAME}-${APP_ENV}-secrets
+          env:
+            # Auth.js v5 only trusts the request host when told to; behind Traefik it must be.
+            - name: AUTH_TRUST_HOST
+              value: "true"
+            # Next's standalone server binds to $HOSTNAME. The image sets 0.0.0.0, but container
+            # runtimes also set HOSTNAME (to the pod name); pinning it here makes the bind address
+            # independent of how the runtime orders the two.
+            - name: HOSTNAME
+              value: "0.0.0.0"
+          # Liveness only checks the server accepts connections: /api/health calls cms-api, and a slow
+          # cms-api must not get the frontend restarted.
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          # /api/health always returns 200 (cms-api status is in the body), so this gates on the
+          # Next server answering requests. The route aborts its cms-api call after 5s
+          # (src/lib/health/checkApiHealth.ts), so the probe timeout must be longer, or a hanging
+          # cms-api would take the whole site out of rotation.
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            timeoutSeconds: 8
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

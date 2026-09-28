@@ -1,0 +1,13 @@
+# Traefik Middleware that permanently redirects http to https. The Ingress references it as
+# <namespace>-<name>@kubernetescrd, so keep that annotation in sync with this name and namespace.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: ${APP_SERVICE_NAME}-${APP_ENV}-https-redirect
+  namespace: ${APP_NAMESPACE}-${APP_ENV}
+  labels:
+    app.kubernetes.io/name: ${APP_NAME}-${APP_SERVICE_NAME}-${APP_ENV}
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true

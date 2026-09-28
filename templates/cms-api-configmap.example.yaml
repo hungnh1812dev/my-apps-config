@@ -1,0 +1,25 @@
+# cms-api ConfigMap template: the ${APP_*} values only cms-api uses. The values shared by all three
+# apps (name, namespace, env, domain, TLS issuer) are in templates/shared-configmap.example.yaml;
+# cluster/me/cms-api-sync.yaml reads that first and this second (postBuild.substituteFrom, which only
+# reads flux-system), so a key set here overrides the shared one.
+# Placeholders only; never commit real values. Created by hand on the cluster, after the shared
+# ConfigMap and before cms-api's first Flux deploy:
+#   cp templates/cms-api-configmap.example.yaml templates/cms-api-configmap.yaml   # gitignored; fill in values
+#   kubectl apply --server-side -f templates/cms-api-configmap.yaml
+# Fill metadata.name so it equals the second substituteFrom ConfigMap in
+# cluster/me/cms-api-sync.yaml (project-me-cms-api-prod-config).
+# Derived names: namespace <APP_NAMESPACE>-<APP_ENV>, resources <APP_SERVICE_NAME>-<APP_ENV>.
+# Quote every value (e.g. "3000"): ConfigMap data must be strings. After a change, re-apply and run
+# `flux reconcile kustomization project-me-cms-api-sync-prod`.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: <app-name>-<app-service-name>-<app-env>-config
+  namespace: flux-system
+data:
+  # Service within the application (resources are named <APP_SERVICE_NAME>-<APP_ENV>)
+  APP_SERVICE_NAME: "<app-service-name>"
+  # Image repository without a tag (app image <repo>:<tag>, init image <repo>:<tag>-init)
+  APP_IMAGE_REPO: "<registry/owner/repo/image>"
+  # Container + Service port; the Deployment also sets it as the app's PORT
+  APP_PORT: "<port>"

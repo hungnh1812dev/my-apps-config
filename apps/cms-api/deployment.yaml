@@ -1,0 +1,85 @@
+# cms-api Deployment: a `prisma migrate deploy` init container, then the app. Both images share
+# ${APP_IMAGE_TAG} (the app tag, and the same tag + `-init`), so they always come from one commit.
+# Runtime config and secrets come from the hand-made <svc>-<env>-secrets Secret via envFrom.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${APP_SERVICE_NAME}-${APP_ENV}
+  namespace: ${APP_NAMESPACE}-${APP_ENV}
+  labels:
+    app.kubernetes.io/name: ${APP_NAME}-${APP_SERVICE_NAME}-${APP_ENV}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ${APP_NAME}-${APP_SERVICE_NAME}-${APP_ENV}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ${APP_NAME}-${APP_SERVICE_NAME}-${APP_ENV}
+    spec:
+      # The app never calls the Kubernetes API, so it gets no service-account token.
+      automountServiceAccountToken: false
+      # No runAsNonRoot yet: it depends on the image's USER (set in the app repo's Dockerfile), and
+      # a root image would then fail to start. See docs/AUDIT.md.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: init
+          image: ${APP_IMAGE_REPO}:${APP_IMAGE_TAG}-init
+          envFrom:
+            - secretRef:
+                name: ${APP_SERVICE_NAME}-${APP_ENV}-secrets
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          # `prisma migrate deploy` is short-lived but loads the Prisma engine, so it gets the app's
+          # memory ceiling.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      containers:
+        - name: app
+          image: ${APP_IMAGE_REPO}:${APP_IMAGE_TAG}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          # PORT is set here (overriding any PORT in the Secret) so the app and the Service can't
+          # disagree. Not via `env`: Flux substitutes after kustomize drops the quotes, so
+          # `value: "${APP_PORT}"` would reach the API server as an int and be rejected. Keep the
+          # rest in sync with the Dockerfile runner's CMD.
+          command: ["sh", "-c", "PORT=${APP_PORT} exec bun dist/src/main"]
+          # Unquoted on purpose: ports must be ints after substitution.
+          ports:
+            - name: http
+              containerPort: ${APP_PORT}
+          envFrom:
+            - secretRef:
+                name: ${APP_SERVICE_NAME}-${APP_ENV}-secrets
+          # cms-api serves /health outside the api/v1 prefix.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: ${APP_PORT}
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: ${APP_PORT}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

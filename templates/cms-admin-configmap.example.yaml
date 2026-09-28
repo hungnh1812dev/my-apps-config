@@ -1,0 +1,25 @@
+# cms-admin ConfigMap template: the ${APP_*} values only cms-admin uses. The values shared by all
+# three apps (name, namespace, env, domain, TLS issuer) are in templates/shared-configmap.example.yaml;
+# cluster/me/cms-admin-sync.yaml reads that first and this second (postBuild.substituteFrom, which only
+# reads flux-system), so a key set here overrides the shared one.
+# Placeholders only; never commit real values. Created by hand on the cluster, after the shared
+# ConfigMap and before cms-admin's first Flux deploy:
+#   cp templates/cms-admin-configmap.example.yaml templates/cms-admin-configmap.yaml   # gitignored; fill in values
+#   kubectl apply --server-side -f templates/cms-admin-configmap.yaml
+# Fill metadata.name so it equals the second substituteFrom ConfigMap in
+# cluster/me/cms-admin-sync.yaml (project-me-cms-admin-prod-config).
+# Derived names: namespace <APP_NAMESPACE>-<APP_ENV>, resources <APP_SERVICE_NAME>-<APP_ENV>.
+# No APP_PORT: nginx listens on 80, an image fact (apps/cms-admin/deployment.yaml).
+# The cms-api URL is NOT here: it's baked into the image at build time from the CMS_ADMIN_API_URL
+# variable in the app repository. Quote every value: ConfigMap data must be strings. After a change,
+# re-apply and run `flux reconcile kustomization project-me-cms-admin-sync-prod`.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: <app-name>-<app-service-name>-<app-env>-config
+  namespace: flux-system
+data:
+  # Service within the application (resources are named <APP_SERVICE_NAME>-<APP_ENV>)
+  APP_SERVICE_NAME: "<app-service-name>"
+  # Image repository without a tag (image <repo>:<tag>)
+  APP_IMAGE_REPO: "<registry/owner/repo/image>"
