@@ -115,6 +115,16 @@ flux --version
 flux check --pre
 ```
 
+Before bootstrapping, create the `flux-system` namespace and the shared ConfigMap. The root
+Kustomization reads it to name the app Kustomizations, and fails without it:
+
+```bash
+kubectl create namespace flux-system
+cp templates/shared-configmap.example.yaml templates/shared-configmap.yaml
+# Set APP_NAME, APP_NAMESPACE, APP_ENV, APP_DOMAIN, APP_TLS_CLUSTER_ISSUER. Keep metadata.name: shared-config.
+kubectl apply --server-side -f templates/shared-configmap.yaml
+```
+
 Bootstrap. This installs the controllers, creates an SSH deploy key on the GitHub repository,
 stores its private half in the `flux-system` Secret, and points Flux at `cluster/me`:
 
@@ -150,22 +160,19 @@ Use the same `APP_NAMESPACE` and `APP_ENV` values you'll put in the ConfigMaps:
 kubectl create namespace <ns>
 ```
 
-## 7. Apply the four ConfigMaps
+## 7. Apply the per-app ConfigMaps
 
 These hold the `${APP_*}` values Flux substitutes into the manifests. They go in `flux-system`.
-Apply the shared one first: every sync file reads it, then its own per-app ConfigMap.
+The shared one (`shared-config`) was applied in step 5. Every sync file reads it first, then its
+own per-app ConfigMap.
 
 ```bash
-cp templates/shared-configmap.example.yaml templates/shared-configmap.yaml
 for svc in cms-api cms-admin frontend; do
   cp templates/$svc-configmap.example.yaml templates/$svc-configmap.yaml
 done
-# Shared copy: set APP_NAME, APP_NAMESPACE, APP_ENV, APP_DOMAIN, APP_TLS_CLUSTER_ISSUER, and
-#   metadata.name to project-me-prod-shared-config.
 # Per-app copies: set APP_SERVICE_NAME (cms-api, cms-admin, frontend), APP_IMAGE_REPO,
 #   APP_PORT (cms-api and frontend; "3000" for frontend), and metadata.name to
-#   project-me-<svc>-prod-config.
-kubectl apply --server-side -f templates/shared-configmap.yaml
+#   <APP_NAME>-<svc>-<APP_ENV>-config (e.g. project-me-cms-api-prod-config).
 kubectl apply --server-side -f templates/cms-api-configmap.yaml
 kubectl apply --server-side -f templates/cms-admin-configmap.yaml
 kubectl apply --server-side -f templates/frontend-configmap.yaml
@@ -174,7 +181,7 @@ kubectl apply --server-side -f templates/frontend-configmap.yaml
 Check that the names match what the sync files read:
 
 ```bash
-kubectl -n flux-system get configmap project-me-prod-shared-config \
+kubectl -n flux-system get configmap shared-config \
   project-me-cms-api-prod-config project-me-cms-admin-prod-config project-me-frontend-prod-config
 ```
 
@@ -322,7 +329,7 @@ git diff --stat   # review, commit, push
 |---|---|---|
 | `flux get sources git` not Ready, auth error | Deploy key removed from GitHub | Re-run the step 5 bootstrap to recreate it |
 | `flux-system` Kustomization: path not found | Bootstrapped with a different `--path` | Re-run bootstrap with `--path=cluster/me` |
-| App Kustomization: `ConfigMap ... not found` | Step 7 skipped or wrong name | `kubectl -n flux-system get cm`; names must be `project-me-prod-shared-config` and `project-me-<svc>-prod-config` |
+| App Kustomization: `ConfigMap ... not found` | Step 7 skipped or wrong name | `kubectl -n flux-system get cm`; names must be `shared-config` and `<APP_NAME>-<svc>-<APP_ENV>-config` |
 | App Kustomization: `namespaces "<ns>" not found` | Step 6 skipped, or namespace doesn't match the ConfigMap | `kubectl get ns`; compare with `APP_NAMESPACE`-`APP_ENV` |
 | Ingress rejected: host `api.` / `admin.` / `APP_DOMAIN-is-not-set` | `APP_DOMAIN` missing from the ConfigMap | Set it, re-apply, reconcile |
 | Pod `CreateContainerConfigError`, Secret not found | Step 8 skipped or Secret name/namespace wrong | `kubectl -n <ns> get secret`; name must be `<name>-secrets` |

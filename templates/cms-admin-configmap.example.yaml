@@ -6,13 +6,13 @@
 # ConfigMap and before cms-admin's first Flux deploy:
 #   cp templates/cms-admin-configmap.example.yaml templates/cms-admin-configmap.yaml   # gitignored; fill in values
 #   kubectl apply --server-side -f templates/cms-admin-configmap.yaml
-# Fill metadata.name so it equals the second substituteFrom ConfigMap in
-# cluster/me/cms-admin-sync.yaml (project-me-cms-admin-prod-config).
+# metadata.name must be <APP_NAME>-cms-admin-<APP_ENV>-config, with the values from the shared ConfigMap:
+# cluster/me/cms-admin-sync.yaml reads it by that name (e.g. project-me-cms-admin-prod-config).
 # Derived names: namespace <APP_NAMESPACE>-<APP_ENV>, resources <APP_SERVICE_NAME>-<APP_ENV>.
 # No APP_PORT: nginx listens on 80, an image fact (apps/cms-admin/deployment.yaml).
 # The cms-api URL is NOT here: it's baked into the image at build time from the CMS_ADMIN_API_URL
 # variable in the app repository. Quote every value: ConfigMap data must be strings. After a change,
-# re-apply and run `flux reconcile kustomization project-me-cms-admin-sync-prod`.
+# re-apply and run `flux reconcile kustomization <APP_NAME>-cms-admin-sync-<APP_ENV>`.
 apiVersion: v1
 kind: ConfigMap
 metadata:
