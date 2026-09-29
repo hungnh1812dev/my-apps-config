@@ -8,8 +8,8 @@ files.
 
 | Kind | Where it lives | Read by | Holds |
 |---|---|---|---|
-| Shared ConfigMap `project-me-prod-shared-config` | `flux-system` namespace, applied by hand | Flux (`postBuild.substituteFrom`, first) | Values all three apps use: name, namespace, env, domain, TLS issuer |
-| Per-app ConfigMap `project-me-<svc>-prod-config` | `flux-system` namespace, applied by hand | Flux (`postBuild.substituteFrom`, second) | Values that differ per app: service name, image repository, port |
+| Shared ConfigMap `shared-config` | `flux-system` namespace, applied by hand before bootstrap | Flux: the root Kustomization (names in the sync files), then each app (`postBuild.substituteFrom`, first) | Values all three apps use: name, namespace, env, domain, TLS issuer |
+| Per-app ConfigMap `<APP_NAME>-<svc>-<APP_ENV>-config` | `flux-system` namespace, applied by hand | Flux (`postBuild.substituteFrom`, second) | Values that differ per app: service name, image repository, port |
 | `postBuild.substitute` in `cluster/me/<svc>-sync.yaml` | git | Flux | `APP_IMAGE_TAG` only |
 | Secret `<svc>-<env>-secrets` | app namespace, applied by hand | the app's pods (`envFrom`) | Runtime config and secrets (cms-api and frontend only) |
 
@@ -45,15 +45,21 @@ the later one wins, so an app can override a shared value by adding the key to i
   postBuild:
     substituteFrom:
       - kind: ConfigMap
-        name: project-me-prod-shared-config
+        name: shared-config
       - kind: ConfigMap
-        name: project-me-cms-api-prod-config
+        name: ${APP_NAME}-cms-api-${APP_ENV}-config
     substitute:
       APP_IMAGE_TAG: "81-47e63ce-amd64"
 ```
 
 Both ConfigMaps are required (`optional` defaults to false). If either is missing, the Kustomization
 fails with `ConfigMap ... not found` instead of rendering empty names.
+
+The `${APP_NAME}` and `${APP_ENV}` in the sync files themselves (the Kustomization's name and the
+per-app ConfigMap it reads) are filled in one level up: the root `flux-system` Kustomization reads
+`shared-config` too (patched in `cluster/me/flux-system/kustomization.yaml`). Flux's own manifests
+are excluded from that substitution. So `APP_ENV` is set in one place, and a cluster with
+`APP_ENV: "staging"` gets `project-me-<svc>-sync-staging` reading `project-me-<svc>-staging-config`.
 
 ### Rules
 
@@ -84,18 +90,20 @@ Every name is derived from the variables, so the manifests contain no project va
 | TLS Secret (created by cert-manager) | `<APP_SERVICE_NAME>-<APP_ENV>-tls` |
 | Traefik Middleware | `<APP_SERVICE_NAME>-<APP_ENV>-https-redirect` |
 | Ingress middleware annotation | `<APP_NAMESPACE>-<APP_ENV>-<APP_SERVICE_NAME>-<APP_ENV>-https-redirect@kubernetescrd` |
-| Shared Flux ConfigMap (in `flux-system`) | `project-me-prod-shared-config` (fixed in the sync files) |
-| Per-app Flux ConfigMap (in `flux-system`) | `project-me-<svc>-prod-config` (fixed in the sync files) |
-| Flux Kustomization (in `flux-system`) | `project-me-<svc>-sync-prod` (fixed) |
+| Shared Flux ConfigMap (in `flux-system`) | `shared-config` (fixed) |
+| Per-app Flux ConfigMap (in `flux-system`) | `<APP_NAME>-<svc>-<APP_ENV>-config`, e.g. `project-me-cms-api-prod-config` |
+| Flux Kustomization (in `flux-system`) | `<APP_NAME>-<svc>-sync-<APP_ENV>`, e.g. `project-me-cms-api-sync-prod` |
 
-The ConfigMap templates use placeholder names (`<app-name>-<app-env>-shared-config`,
-`<app-name>-<app-service-name>-<app-env>-config`). Fill them in so they become the fixed names above.
+The per-app ConfigMap templates use the placeholder name `<app-name>-<app-service-name>-<app-env>-config`.
+Fill it in so it matches the name above.
+
 
 The Secret templates don't go through Flux, so their `metadata.name` (`<svc>-<env>-secrets`) and
 `namespace` have to be written out by hand to match this scheme.
 
 Changing `APP_NAME`, `APP_SERVICE_NAME`, `APP_NAMESPACE` or `APP_ENV` on a live cluster renames
-everything. Flux prunes the old resources and creates new ones, but the hand-made namespace and
+everything (`APP_NAME` and `APP_ENV` also rename the sync Kustomizations and the per-app ConfigMaps
+they read, so create those first). Flux prunes the old resources and creates new ones, but the hand-made namespace and
 Secrets have to be recreated under the new names first.
 
 ## ConfigMap vs Secret
@@ -106,7 +114,7 @@ Secrets have to be recreated under the new names first.
 | Contains | Non-secret project info (`APP_*`), shared + per-app | App settings and credentials (DB password, JWT keys, `AUTH_SECRET`, ...) |
 | Consumer | Flux, at render time | The pods, at start |
 | Services | all three | cms-api, frontend (cms-admin has its API URL built into the image) |
-| After a change | re-apply, then `flux reconcile kustomization project-me-<svc>-sync-prod` (for the shared ConfigMap: all three) | re-apply, then `kubectl -n <ns> rollout restart deploy/<svc>-<env>` |
+| After a change | re-apply, then `flux reconcile kustomization <APP_NAME>-<svc>-sync-<APP_ENV>` (for the shared ConfigMap: `flux-system`, then all three) | re-apply, then `kubectl -n <ns> rollout restart deploy/<svc>-<env>` |
 
 A ConfigMap change only takes effect after Flux re-renders, on the next interval or a manual
 reconcile. A Secret change only takes effect when the pods restart, because `envFrom` is read once

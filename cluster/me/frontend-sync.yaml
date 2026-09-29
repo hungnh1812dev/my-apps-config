@@ -1,4 +1,4 @@
-# frontend in prod: applies ./apps/frontend with ${APP_*} from the shared ConfigMap, then the
+# frontend: applies ./apps/frontend with ${APP_*} from the shared ConfigMap, then the
 # frontend ConfigMap (a key in both takes the frontend value). APP_IMAGE_TAG is committed to main by
 # the app repository after it pushes a new image; Flux applies it on its next poll. Keep exactly one
 # `APP_IMAGE_TAG:` line: the app repository rewrites it.
@@ -7,7 +7,7 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: project-me-frontend-sync-prod
+  name: ${APP_NAME}-frontend-sync-${APP_ENV}
   namespace: flux-system
 spec:
   interval: 3m
@@ -24,10 +24,12 @@ spec:
   timeout: 5m
   postBuild:
     # Both ConfigMaps must exist: a missing one fails the Kustomization instead of rendering empty names.
+    # ${APP_NAME}/${APP_ENV} in the names here are filled in by the root Kustomization, from
+    # shared-config (cluster/me/flux-system/kustomization.yaml); the apps still read it themselves.
     substituteFrom:
       - kind: ConfigMap
-        name: project-me-prod-shared-config
+        name: shared-config
       - kind: ConfigMap
-        name: project-me-frontend-prod-config
+        name: ${APP_NAME}-frontend-${APP_ENV}-config
     substitute:
       APP_IMAGE_TAG: "dev"

@@ -10,7 +10,7 @@ the `flux-system` namespace.
 | Flux controllers | source-, kustomize-, helm-, notification-controller | `cluster/me/flux-system/gotk-components.yaml` | The Flux v2.9.5 install (the default components). Generated, don't edit |
 | Secret | `flux-system` | created by `flux bootstrap` (not in git) | SSH deploy key for GitHub |
 | GitRepository | `flux-system` | `cluster/me/flux-system/gotk-sync.yaml` | Polls `main` every 1m |
-| Kustomization | `flux-system` | `cluster/me/flux-system/gotk-sync.yaml` | The root: applies `./cluster/me` every 10m |
+| Kustomization | `flux-system` | `cluster/me/flux-system/gotk-sync.yaml`, patched by `flux-system/kustomization.yaml` | The root: applies `./cluster/me` every 10m, with `${APP_NAME}`/`${APP_ENV}` from `shared-config` |
 | Kustomization | `project-me-cms-api-sync-prod` | `cluster/me/cms-api-sync.yaml` | Applies `./apps/cms-api` |
 | Kustomization | `project-me-cms-admin-sync-prod` | `cluster/me/cms-admin-sync.yaml` | Applies `./apps/cms-admin` |
 | Kustomization | `project-me-frontend-sync-prod` | `cluster/me/frontend-sync.yaml` | Applies `./apps/frontend` |
@@ -31,7 +31,10 @@ Kustomization flux-system            path ./cluster/me (kustomization.yaml)
   └── frontend-sync.yaml  ──► Kustomization project-me-frontend-sync-prod  ──► apps/frontend
 ```
 
-The root Kustomization only creates the three app Kustomizations. Each app Kustomization then
+The root Kustomization only creates the three app Kustomizations. It reads `shared-config` to fill
+`${APP_NAME}` and `${APP_ENV}` in their names and in the per-app ConfigMap each one reads (a patch in
+`cluster/me/flux-system/kustomization.yaml`; Flux's own manifests are excluded). The names above are
+what prod gets with `APP_NAME: project-me` and `APP_ENV: prod`. Each app Kustomization then
 renders its `apps/<svc>` directory, substitutes `${APP_*}` from the shared and per-app ConfigMaps (see
 [configuration.md](configuration.md)), and applies the result into the app namespace.
 
@@ -49,7 +52,11 @@ Always bootstrap with `--path=cluster/me`. `gotk-sync.yaml` is generated from th
 any other path overwrites the root Kustomization's `spec.path`, so the apps are no longer applied.
 The full command is in [DEPLOYMENT.md](../DEPLOYMENT.md).
 
-Don't edit the `gotk-*.yaml` files by hand. Change them by re-running `flux bootstrap` (or
+`shared-config` must exist before bootstrap. Without it the root Kustomization fails, and with it
+Flux's own updates.
+
+Don't edit the `gotk-*.yaml` files by hand. `flux-system/kustomization.yaml` is the exception:
+bootstrap keeps it, and it holds the substitution patch. Change them by re-running `flux bootstrap` (or
 `flux install --export` for an upgrade; see the Upgrading Flux section in
 [DEPLOYMENT.md](../DEPLOYMENT.md)).
 
@@ -64,7 +71,7 @@ All three sync files share these settings:
 | `prune` | `true` | A resource removed from `apps/<svc>` is deleted from the cluster |
 | `wait` | `true` | Ready only once every applied resource is healthy (Deployment rolled out, etc.) |
 | `timeout` | `5m` | How long `wait` waits before the reconcile is marked failed |
-| `postBuild.substituteFrom` | `project-me-prod-shared-config`, then `project-me-<svc>-prod-config` | The `${APP_*}` values: shared first, per-app second (per-app wins on a clash) |
+| `postBuild.substituteFrom` | `shared-config`, then `${APP_NAME}-<svc>-${APP_ENV}-config` | The `${APP_*}` values: shared first, per-app second (per-app wins on a clash) |
 | `postBuild.substitute` | `APP_IMAGE_TAG` | The image tag, committed here by the app repository |
 
 There's no `dependsOn` between apps. The frontend tolerates cms-api being down, and a `dependsOn`
