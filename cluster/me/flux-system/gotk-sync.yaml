@@ -8,10 +8,10 @@ metadata:
 spec:
   interval: 1m0s
   ref:
-    branch: main
+    branch: staging
   secretRef:
     name: flux-system
-  url: ssh://git@github.com/hungnh1812dev/project-me-config.git
+  url: ssh://git@github.com/hungnh1812dev/project-me-config
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
