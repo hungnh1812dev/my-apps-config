@@ -6,13 +6,13 @@
 # ConfigMap and before the frontend's first Flux deploy:
 #   cp templates/frontend-configmap.example.yaml templates/frontend-configmap.yaml   # gitignored; fill in values
 #   kubectl apply --server-side -f templates/frontend-configmap.yaml
-# Fill metadata.name so it equals the second substituteFrom ConfigMap in
-# cluster/me/frontend-sync.yaml (project-me-frontend-prod-config).
+# metadata.name must be <APP_NAME>-frontend-<APP_ENV>-config, with the values from the shared ConfigMap:
+# cluster/me/frontend-sync.yaml reads it by that name (e.g. project-me-frontend-prod-config).
 # Derived names: namespace <APP_NAMESPACE>-<APP_ENV>, resources <APP_SERVICE_NAME>-<APP_ENV>.
 # Runtime settings and secrets are NOT here: they go in the Secret (templates/frontend-secret.example.yaml).
 # The public GraphQL URL for the health check is baked into the image from the FRONTEND_GRAPHQL_URL
 # variable in the app repository. Quote every value (e.g. "3000"): ConfigMap data must be strings.
-# After a change, re-apply and run `flux reconcile kustomization project-me-frontend-sync-prod`.
+# After a change, re-apply and run `flux reconcile kustomization <APP_NAME>-frontend-sync-<APP_ENV>`.
 apiVersion: v1
 kind: ConfigMap
 metadata:
