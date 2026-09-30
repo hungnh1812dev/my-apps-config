@@ -109,8 +109,33 @@ flux build kustomization cms-api-sync -n project-me-staging \
   --path ./apps/cms-api --kustomization-file ./cluster-base/cms-api-sync.yaml --dry-run
 ```
 
-Anything pushed to `staging` or `main` is applied to that environment within a few minutes. Changes
-go to `staging` first and reach prod by merging `staging` into `main`.
+## Deploying a change
+
+Anything pushed to `staging` or `main` is applied to that environment within a few minutes.
+
+1. Validate the change (above).
+2. Push to `staging`. To skip waiting for the poll:
+   `flux -n project-me-staging reconcile kustomization project-me-staging --with-source`.
+3. Check it rolled out:
+
+   ```bash
+   flux -n <ns> get kustomizations              # all four READY True
+   kubectl -n <ns> get pods                     # all Running and READY 1/1
+   curl -I https://<domain>/api/health/ready    # frontend: 200
+   curl -I https://admin.<domain>/health/ready  # cms-admin: 200
+   curl -I https://api.<domain>/health/ready    # cms-api: 200
+   ```
+
+4. Merge `staging` into `main` to deploy prod, then run the same checks against prod.
+
+If a pod stays not Ready or keeps restarting, see
+[Troubleshooting](docs/DEPLOYMENT.md#14-troubleshooting) and [Rollback](docs/DEPLOYMENT.md#12-rollback).
+
+**Probe paths come from the app.** Every Deployment probes `…/health/live` (liveness) and
+`…/health/ready` (readiness); the paths are in each app's
+[component doc](docs/components/). When a change here adds or renames a probe path, the app image
+serving it must be deployed to that environment first. Otherwise the probes get 404s, the pods
+never become Ready, and liveness keeps restarting them.
 
 ## Rules
 

@@ -257,9 +257,9 @@ kubectl -n <ns> get certificate              # one <name>-tls per service, READY
 Certificates can take a minute or two. Then check each site over HTTPS:
 
 ```bash
-curl -I https://<domain>/api/health          # frontend: 200
-curl -I https://admin.<domain>/healthz       # cms-admin: 200
-curl -I https://api.<domain>/health          # cms-api: 200
+curl -I https://<domain>/api/health/ready    # frontend: 200
+curl -I https://admin.<domain>/health/ready  # cms-admin: 200
+curl -I https://api.<domain>/health/ready    # cms-api: 200
 curl -I http://<domain>                      # 301/308 redirect to https
 ```
 

@@ -38,11 +38,11 @@ variable.
 
 | Probe | Check | Initial delay | Period |
 |---|---|---|---|
-| Readiness | `GET /healthz` on `http` | — | 10s |
-| Liveness | `GET /healthz` on `http` | 5s | 20s |
+| Readiness | `GET /health/ready` on `http` | — | 10s |
+| Liveness | `GET /health/live` on `http` | 5s | 20s |
 
-nginx answers `/healthz` itself, with no file or upstream involved, so the probes don't depend on
-cms-api.
+nginx answers both endpoints itself, with no file or upstream involved, so the probes don't depend
+on cms-api.
 
 ## Resources (CPU / memory)
 

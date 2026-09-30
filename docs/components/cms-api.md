@@ -46,10 +46,15 @@ command must stay in sync with the `CMD` in the app repository's Dockerfile.
 
 | Probe | Check | Initial delay | Period |
 |---|---|---|---|
-| Readiness | `GET /health` on `APP_PORT` | 5s | 10s |
-| Liveness | `GET /health` on `APP_PORT` | 15s | 20s |
+| Readiness | `GET /health/ready` on `APP_PORT` | 5s | 10s |
+| Liveness | `GET /health/live` on `APP_PORT` | 15s | 20s |
 
-`/health` is served outside the `/api/v1` prefix.
+Both endpoints are served outside the `/api/v1` prefix.
+
+- `/health/live` only checks that the process answers, with no dependency checks, so a database
+  outage never gets cms-api restarted.
+- `/health/ready` also checks the database, so while the database is down the pod is taken out of
+  the Service until it recovers.
 
 ## Resources (CPU / memory)
 

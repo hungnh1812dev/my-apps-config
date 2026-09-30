@@ -40,16 +40,16 @@ placeholder isn't a valid hostname, so the apply fails instead.
 
 | Probe | Check | Initial delay | Period | Timeout |
 |---|---|---|---|---|
-| Readiness | `GET /api/health` on `http` | — | 10s | 8s |
-| Liveness | TCP connect on `http` | 10s | 20s | 1s (default) |
+| Readiness | `GET /api/health/ready` on `http` | — | 10s | 8s |
+| Liveness | `GET /api/health/live` on `http` | 10s | 20s | 1s (default) |
 
 These are chosen so that problems with cms-api don't take the frontend down:
 
-- `/api/health` always returns 200 and reports cms-api's status in the body, so readiness only
-  checks that the Next server answers.
+- `/api/health/ready` always returns 200 and reports cms-api's status in the body, so readiness
+  only checks that the Next server answers.
 - The route stops waiting for cms-api after 5s. The 8s probe timeout is longer, so a hanging cms-api
   doesn't mark the pod unready.
-- Liveness is a TCP check only, so a slow cms-api never gets the frontend restarted.
+- `/api/health/live` never calls cms-api, so a slow cms-api never gets the frontend restarted.
 
 ## Resources (CPU / memory)
 

@@ -63,16 +63,18 @@ spec:
           envFrom:
             - secretRef:
                 name: ${APP_SERVICE_NAME}-secrets
-          # cms-api serves /health outside the api/v1 prefix.
+          # cms-api serves /health/* outside the api/v1 prefix. Liveness only checks the process
+          # answers: a database outage must take the pod out of rotation (readiness), not restart it.
           livenessProbe:
             httpGet:
-              path: /health
+              path: /health/live
               port: ${APP_PORT}
             initialDelaySeconds: 15
             periodSeconds: 20
+          # /health/ready also checks the database.
           readinessProbe:
             httpGet:
-              path: /health
+              path: /health/ready
               port: ${APP_PORT}
             initialDelaySeconds: 5
             periodSeconds: 10
