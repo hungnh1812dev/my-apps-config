@@ -1,0 +1,23 @@
+# Root of the prod Flux instance, bootstrapped with --namespace=project-me-prod --branch=main
+# --path=cluster/me/prod (docs/DEPLOYMENT.md). Flux, its ConfigMaps, the Secrets and the apps all
+# live in project-me-prod, so this instance never touches another project or environment.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: project-me-prod
+resources:
+  - flux-system
+  - ../../../cluster-base
+patches:
+  # `flux bootstrap --namespace=project-me-prod` names the GitRepository project-me-prod, not flux-system.
+  - target:
+      group: kustomize.toolkit.fluxcd.io
+      kind: Kustomization
+      name: .*-sync
+    patch: |-
+      - op: replace
+        path: /spec/sourceRef/name
+        value: project-me-prod
+  # Image tags, one file per app.
+  - path: cms-api-sync-overlay.yaml
+  - path: cms-admin-sync-overlay.yaml
+  - path: frontend-sync-overlay.yaml

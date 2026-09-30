@@ -1,64 +1,84 @@
-# flux-system: bootstrap and sync
+# Flux: bootstrap and sync
 
-How Flux gets from this Git repository to the three apps on the cluster. Everything here lives in
-the `flux-system` namespace.
+How Flux gets from this Git repository to the three apps. A cluster can run many Flux instances:
+one per project and environment, each bootstrapped into that environment's namespace and watching
+only that namespace. For project-me:
 
-## Resources
+| Environment | Namespace (Flux + apps) | Branch | Path |
+|---|---|---|---|
+| staging | `project-me-staging` | `staging` | `cluster/me/staging` |
+| prod | `project-me-prod` | `main` | `cluster/me/prod` |
+
+Another project (another config repository) bootstraps the same way into `<project>-<env>`.
+
+## Resources (per environment, all in `<ns>`)
 
 | Resource | Name | Defined in | What it does |
 |---|---|---|---|
-| Flux controllers | source-, kustomize-, helm-, notification-controller | `cluster/me/flux-system/gotk-components.yaml` | The Flux v2.9.5 install (the default components). Generated, don't edit |
+| Flux controllers | source-controller, kustomize-controller | `cluster/me/<env>/flux-system/gotk-components.yaml` | The Flux v2.9.5 install. Generated, don't edit |
 | Secret | `flux-system` | created by `flux bootstrap` (not in git) | SSH deploy key for GitHub |
-| GitRepository | `flux-system` | `cluster/me/flux-system/gotk-sync.yaml` | Polls `main` every 1m |
-| Kustomization | `flux-system` | `cluster/me/flux-system/gotk-sync.yaml`, patched by `flux-system/kustomization.yaml` | The root: applies `./cluster/me` every 10m, with `${APP_NAME}`/`${APP_ENV}` from `shared-config` |
-| Kustomization | `project-me-cms-api-sync-prod` | `cluster/me/cms-api-sync.yaml` | Applies `./apps/cms-api` |
-| Kustomization | `project-me-cms-admin-sync-prod` | `cluster/me/cms-admin-sync.yaml` | Applies `./apps/cms-admin` |
-| Kustomization | `project-me-frontend-sync-prod` | `cluster/me/frontend-sync.yaml` | Applies `./apps/frontend` |
+| GitRepository | `<ns>` | `cluster/me/<env>/flux-system/gotk-sync.yaml` | Polls the environment's branch every 1m |
+| Kustomization | `<ns>` | `cluster/me/<env>/flux-system/gotk-sync.yaml` | The root: applies `./cluster/me/<env>` every 10m |
+| Kustomization | `cms-api-sync`, `cms-admin-sync`, `frontend-sync` | `cluster-base/<svc>-sync.yaml` + `cluster/me/<env>/<svc>-sync-overlay.yaml` | Applies `./apps/<svc>` |
+
+`flux bootstrap --namespace=<ns>` names the GitRepository and the root Kustomization `<ns>`, not
+`flux-system`. `cluster/me/<env>/kustomization.yaml` patches the sync files' `sourceRef` to match.
 
 ## How it fits together
 
 ```
-GitHub: hungnh1812dev/project-me-config (main)
-  │  ssh, deploy key in Secret flux-system
-  ▼
-GitRepository flux-system            (interval 1m)
-  │
-  ▼
-Kustomization flux-system            path ./cluster/me (kustomization.yaml)
-  ├── flux-system/                   gotk-components.yaml + gotk-sync.yaml (Flux manages itself)
-  ├── cms-api-sync.yaml   ──► Kustomization project-me-cms-api-sync-prod   ──► apps/cms-api
-  ├── cms-admin-sync.yaml ──► Kustomization project-me-cms-admin-sync-prod ──► apps/cms-admin
-  └── frontend-sync.yaml  ──► Kustomization project-me-frontend-sync-prod  ──► apps/frontend
+GitHub: hungnh1812dev/project-me-config
+  │  branch staging                         branch main
+  ▼                                         ▼
+GitRepository project-me-staging          GitRepository project-me-prod
+  ▼                                         ▼
+Kustomization project-me-staging          Kustomization project-me-prod
+  path ./cluster/me/staging                 path ./cluster/me/prod
+  ├── flux-system/  (Flux manages itself)   ├── flux-system/
+  ├── ../../../cluster-base                 ├── ../../../cluster-base
+  │     cms-api-sync ──► apps/cms-api       │     (same three sync files)
+  │     cms-admin-sync ─► apps/cms-admin    │
+  │     frontend-sync ──► apps/frontend     │
+  └── <svc>-sync-overlay.yaml (image tags)  └── <svc>-sync-overlay.yaml
+  everything in namespace project-me-staging   everything in namespace project-me-prod
 ```
 
-The root Kustomization only creates the three app Kustomizations. It reads `shared-config` to fill
-`${APP_NAME}` and `${APP_ENV}` in their names and in the per-app ConfigMap each one reads (a patch in
-`cluster/me/flux-system/kustomization.yaml`; Flux's own manifests are excluded). The names above are
-what prod gets with `APP_NAME: project-me` and `APP_ENV: prod`. Each app Kustomization then
-renders its `apps/<svc>` directory, substitutes `${APP_*}` from the shared and per-app ConfigMaps (see
-[configuration.md](configuration.md)), and applies the result into the app namespace.
+`cluster/me/<env>/kustomization.yaml` sets `namespace: <ns>` on everything it renders, so the sync
+Kustomizations, the ConfigMaps they read and the apps they deploy all live in the Flux namespace.
+Each sync Kustomization renders `apps/<svc>`, substitutes `${APP_*}` from `shared-config` and
+`<svc>-config` (see [configuration.md](configuration.md)), and applies the result.
 
-All four Kustomizations read the same GitRepository, so one commit updates everything. When the
-GitRepository fetches a new revision, kustomize-controller reconciles right away. It doesn't wait
-for the 10m or 3m interval, so a commit usually reaches the cluster within a minute or two.
+Promotion: changes land on `staging` first, then `staging` is merged into `main`. Image tags live in
+per-environment files, so a merge carries the staging tag files along without touching prod's.
 
 ## Bootstrap
 
-`flux bootstrap github` installs the controllers, creates the deploy key and the `flux-system`
-Secret, and commits `gotk-components.yaml`, `gotk-sync.yaml` and `flux-system/kustomization.yaml`
-to `--path`. The files are already in this repository, so bootstrap only commits if they differ.
+The full command, with every flag explained, is in [DEPLOYMENT.md](../DEPLOYMENT.md#5-install-the-flux-cli-and-bootstrap).
+The flags that make instances independent:
 
-Always bootstrap with `--path=cluster/me`. `gotk-sync.yaml` is generated from the flags, and
-any other path overwrites the root Kustomization's `spec.path`, so the apps are no longer applied.
-The full command is in [DEPLOYMENT.md](../DEPLOYMENT.md).
+| Flag | Why |
+|---|---|
+| `--namespace=<ns>` | Flux, its deploy key and its objects live in the environment's namespace |
+| `--watch-all-namespaces=false` | The controllers only reconcile Flux objects in `<ns>`. Without it, every instance reconciles every other instance's objects |
+| `--network-policy=false` | Flux's default NetworkPolicy denies ingress from other namespaces to every pod in `<ns>`, which would cut Traefik off from the apps |
+| `--components=source-controller,kustomize-controller` | Nothing here uses Helm or notifications; two controllers per instance instead of four |
+| `--branch`, `--path` | Must match the table above. Any other path rewrites `gotk-sync.yaml` and the apps are no longer applied |
 
-`shared-config` must exist before bootstrap. Without it the root Kustomization fails, and with it
-Flux's own updates.
+`gotk-components.yaml` and `gotk-sync.yaml` are generated. Never copy them from another environment:
+they carry the namespace, branch and flags. `flux-system/kustomization.yaml` is hand-written and kept
+by bootstrap.
 
-Don't edit the `gotk-*.yaml` files by hand. `flux-system/kustomization.yaml` is the exception:
-bootstrap keeps it, and it holds the substitution patch. Change them by re-running `flux bootstrap` (or
-`flux install --export` for an upgrade; see the Upgrading Flux section in
-[DEPLOYMENT.md](../DEPLOYMENT.md)).
+## Rules for several instances on one cluster
+
+- **One Flux version for all instances.** The CRDs are cluster-wide and every instance applies them.
+  Upgrade every instance on the cluster together ([DEPLOYMENT.md](../DEPLOYMENT.md#13-upgrading-flux)).
+- **CRDs are never pruned.** `flux-system/kustomization.yaml` marks them
+  `kustomize.toolkit.fluxcd.io/prune: disabled`, so removing one instance can't delete the CRDs, which
+  would delete every other instance's GitRepositories and Kustomizations.
+- **Never run `flux uninstall`** on a shared cluster: it deletes the CRDs. Remove one instance as
+  described in [DEPLOYMENT.md](../DEPLOYMENT.md#15-removing-one-instance).
+- **Every instance watches only its own namespace.** An instance installed with
+  `--watch-all-namespaces=true` (the default) also reconciles every other instance's objects.
 
 ## App Kustomization settings
 
@@ -71,8 +91,8 @@ All three sync files share these settings:
 | `prune` | `true` | A resource removed from `apps/<svc>` is deleted from the cluster |
 | `wait` | `true` | Ready only once every applied resource is healthy (Deployment rolled out, etc.) |
 | `timeout` | `5m` | How long `wait` waits before the reconcile is marked failed |
-| `postBuild.substituteFrom` | `shared-config`, then `${APP_NAME}-<svc>-${APP_ENV}-config` | The `${APP_*}` values: shared first, per-app second (per-app wins on a clash) |
-| `postBuild.substitute` | `APP_IMAGE_TAG` | The image tag, committed here by the app repository |
+| `postBuild.substituteFrom` | `shared-config`, then `<svc>-config` | The `${APP_*}` values: shared first, per-app second (per-app wins on a clash) |
+| `postBuild.substitute` | `APP_IMAGE_TAG` | The image tag, from `cluster/me/<env>/<svc>-sync-overlay.yaml` |
 
 There's no `dependsOn` between apps. The frontend tolerates cms-api being down, and a `dependsOn`
 would block frontend deploys whenever cms-api isn't Ready ([AUDIT.md](../AUDIT.md), finding 12).
@@ -82,29 +102,35 @@ would block frontend deploys whenever cms-api isn't Ready ([AUDIT.md](../AUDIT.m
 Both levels have `prune: true`, so deletions in git propagate:
 
 - Removing a file from `apps/<svc>/kustomization.yaml` deletes that resource.
-- Removing a `*-sync.yaml` from `cluster/me/kustomization.yaml` deletes that app's
-  Kustomization, and with it every resource the app deployed.
+- Removing a sync file from `cluster-base/kustomization.yaml` deletes that app's Kustomization in
+  every environment, and with it every resource the app deployed.
 
 To stop an app from changing without deleting it, suspend it instead:
 
 ```bash
-flux suspend kustomization project-me-frontend-sync-prod
-flux resume kustomization project-me-frontend-sync-prod
+flux -n <ns> suspend kustomization frontend-sync
+flux -n <ns> resume kustomization frontend-sync
 ```
 
 ## Common commands
 
+Every `flux` command needs `-n <ns>`: nothing lives in `flux-system`.
+
 ```bash
-flux check                                                  # controllers healthy, version
-flux get sources git -n flux-system                         # fetched revision of main
-flux get kustomizations -n flux-system                      # Ready / revision per Kustomization
-flux reconcile kustomization flux-system --with-source      # fetch main now and re-apply the root
-flux reconcile kustomization project-me-cms-api-sync-prod      # re-apply one app now
-flux logs --kind=Kustomization --name=project-me-cms-api-sync-prod -n flux-system
+flux -n <ns> check                                          # controllers healthy, version
+flux -n <ns> get sources git                                # fetched revision of the branch
+flux -n <ns> get kustomizations                             # Ready / revision per Kustomization
+flux -n <ns> reconcile kustomization <ns> --with-source     # fetch the branch now and re-apply the root
+flux -n <ns> reconcile kustomization cms-api-sync           # re-apply one app now
+flux -n <ns> logs --kind=Kustomization --name=cms-api-sync
 ```
 
 ## Known limits
 
-- The deploy key is the cluster's only credential for the repository. If it's removed from GitHub,
-  the GitRepository stops fetching and the cluster stays on the last revision.
-- Flux applies whatever is on `main`. There's no staging branch or promotion step.
+- The deploy key is each instance's only credential for the repository. If it's removed from
+  GitHub, that instance stops fetching and stays on the last revision.
+- Each instance's kustomize-controller has cluster-admin (Flux's default), so the namespace boundary
+  is a convention kept by `APP_NAMESPACE`/`APP_ENV`, not enforced. Keep
+  `<APP_NAMESPACE>-<APP_ENV>` equal to the namespace Flux was bootstrapped into.
+- Flux's own Namespace object is in `gotk-components.yaml`: deleting an instance's root Kustomization
+  with pruning on deletes the namespace and every app in it.

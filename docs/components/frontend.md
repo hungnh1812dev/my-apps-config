@@ -4,9 +4,10 @@ The public website: a Next.js standalone server with Auth.js. It renders pages f
 content, which it fetches over GraphQL from its server.
 
 - **Base:** `apps/frontend/`
-- **Flux Kustomization:** `project-me-frontend-sync-prod` (`cluster/me/frontend-sync.yaml`)
-- **ConfigMaps:** `project-me-prod-shared-config` (template `templates/shared-configmap.example.yaml`)
-  and `project-me-frontend-prod-config` (template `templates/frontend-configmap.example.yaml`)
+- **Flux Kustomization:** `frontend-sync` in the environment's namespace (`cluster-base/frontend-sync.yaml`,
+  image tag in `cluster/me/<env>/frontend-sync-overlay.yaml`)
+- **ConfigMaps:** `shared-config` (template `templates/shared-configmap.example.yaml`)
+  and `frontend-config` (template `templates/frontend-configmap.example.yaml`), both in `<ns>`
 - **Secret:** `<APP_SERVICE_NAME>-<APP_ENV>-secrets` (template `templates/frontend-secret.example.yaml`)
 
 Names below use `<name>` for `<APP_SERVICE_NAME>-<APP_ENV>` (see
