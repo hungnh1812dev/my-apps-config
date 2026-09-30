@@ -7,4 +7,4 @@ metadata:
 spec:
   postBuild:
     substitute:
-      APP_IMAGE_TAG: "81-47e63ce-amd64"
+      APP_IMAGE_TAG: "dev"
