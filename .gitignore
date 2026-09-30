@@ -1,3 +1,5 @@
 # Filled-in copies of the templates hold real values and secrets; only the examples are committed.
 templates/*.yaml
 !templates/*.example.yaml
+
+.DS_Store

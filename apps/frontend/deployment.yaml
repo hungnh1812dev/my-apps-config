@@ -49,20 +49,21 @@ spec:
             # independent of how the runtime orders the two.
             - name: HOSTNAME
               value: "0.0.0.0"
-          # Liveness only checks the server accepts connections: /api/health calls cms-api, and a slow
+          # /api/health/live only checks the Next server answers and never calls cms-api: a slow
           # cms-api must not get the frontend restarted.
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: /api/health/live
               port: http
             initialDelaySeconds: 10
             periodSeconds: 20
-          # /api/health always returns 200 (cms-api status is in the body), so this gates on the
-          # Next server answering requests. The route aborts its cms-api call after 5s
+          # /api/health/ready always returns 200 (cms-api status is in the body), so this gates on
+          # the Next server answering requests. The route aborts its cms-api call after 5s
           # (src/lib/health/checkApiHealth.ts), so the probe timeout must be longer, or a hanging
           # cms-api would take the whole site out of rotation.
           readinessProbe:
             httpGet:
-              path: /api/health
+              path: /api/health/ready
               port: http
             timeoutSeconds: 8
             periodSeconds: 10
