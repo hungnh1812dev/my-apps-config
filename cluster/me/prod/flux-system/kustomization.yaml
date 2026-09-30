@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - gotk-components.yaml
+  - gotk-sync.yaml
+# Hand-written; `flux bootstrap` keeps this file and only rewrites gotk-*.yaml.
+patches:
+  # Every Flux instance on the cluster applies the same cluster-wide CRDs. Without this, removing
+  # one instance (or its gotk-components.yaml) would prune the CRDs and with them every other
+  # instance's GitRepositories and Kustomizations. kind/name below are ignored; the target selects.
+  - target:
+      kind: CustomResourceDefinition
+    patch: |-
+      apiVersion: apiextensions.k8s.io/v1
+      kind: CustomResourceDefinition
+      metadata:
+        name: not-used
+        annotations:
+          kustomize.toolkit.fluxcd.io/prune: disabled

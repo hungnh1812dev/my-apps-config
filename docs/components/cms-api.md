@@ -4,9 +4,10 @@ The CMS backend: a Bun server with Prisma on Postgres, serving REST under `/api/
 The cms-admin SPA calls it from the browser, and the frontend calls it from its server.
 
 - **Base:** `apps/cms-api/`
-- **Flux Kustomization:** `project-me-cms-api-sync-prod` (`cluster/me/cms-api-sync.yaml`)
-- **ConfigMaps:** `project-me-prod-shared-config` (template `templates/shared-configmap.example.yaml`)
-  and `project-me-cms-api-prod-config` (template `templates/cms-api-configmap.example.yaml`)
+- **Flux Kustomization:** `cms-api-sync` in the environment's namespace (`cluster-base/cms-api-sync.yaml`,
+  image tag in `cluster/me/<env>/cms-api-sync-overlay.yaml`)
+- **ConfigMaps:** `shared-config` (template `templates/shared-configmap.example.yaml`)
+  and `cms-api-config` (template `templates/cms-api-configmap.example.yaml`), both in `<ns>`
 - **Secret:** `<APP_SERVICE_NAME>-<APP_ENV>-secrets` (template `templates/cms-api-secret.example.yaml`)
 
 Names below use `<name>` for `<APP_SERVICE_NAME>-<APP_ENV>` and `<ns>` for

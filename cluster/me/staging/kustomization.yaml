@@ -1,0 +1,23 @@
+# Root of the staging Flux instance, bootstrapped with --namespace=project-me-staging --branch=staging
+# --path=cluster/me/staging (docs/DEPLOYMENT.md). Flux, its ConfigMaps, the Secrets and the apps all
+# live in project-me-staging, so this instance never touches another project or environment.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: project-me-staging
+resources:
+  - flux-system
+  - ../../../cluster-base
+patches:
+  # `flux bootstrap --namespace=project-me-staging` names the GitRepository project-me-staging, not flux-system.
+  - target:
+      group: kustomize.toolkit.fluxcd.io
+      kind: Kustomization
+      name: .*-sync
+    patch: |-
+      - op: replace
+        path: /spec/sourceRef/name
+        value: project-me-staging
+  # Image tags, one file per app.
+  - path: cms-api-sync-overlay.yaml
+  - path: cms-admin-sync-overlay.yaml
+  - path: frontend-sync-overlay.yaml

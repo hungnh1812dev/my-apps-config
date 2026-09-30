@@ -1,0 +1,10 @@
+# cms-api image tag in prod. The app repository's pipeline rewrites the one line starting with
+# `APP_IMAGE_TAG:` and commits it to the main branch; Flux applies it on its next poll. Keep exactly one.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: cms-api-sync
+spec:
+  postBuild:
+    substitute:
+      APP_IMAGE_TAG: "81-47e63ce-amd64"

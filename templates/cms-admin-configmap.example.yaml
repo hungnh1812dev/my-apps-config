@@ -1,23 +1,23 @@
 # cms-admin ConfigMap template: the ${APP_*} values only cms-admin uses. The values shared by all
 # three apps (name, namespace, env, domain, TLS issuer) are in templates/shared-configmap.example.yaml;
-# cluster/me/cms-admin-sync.yaml reads that first and this second (postBuild.substituteFrom, which only
-# reads flux-system), so a key set here overrides the shared one.
+# cluster-base/cms-admin-sync.yaml reads that first and this second (postBuild.substituteFrom), so a key
+# set here overrides the shared one.
 # Placeholders only; never commit real values. Created by hand on the cluster, after the shared
 # ConfigMap and before cms-admin's first Flux deploy:
-#   cp templates/cms-admin-configmap.example.yaml templates/cms-admin-configmap.yaml   # gitignored; fill in values
-#   kubectl apply --server-side -f templates/cms-admin-configmap.yaml
-# metadata.name must be <APP_NAME>-cms-admin-<APP_ENV>-config, with the values from the shared ConfigMap:
-# cluster/me/cms-admin-sync.yaml reads it by that name (e.g. project-me-cms-admin-prod-config).
+#   cp templates/cms-admin-configmap.example.yaml templates/cms-admin-configmap-<app-env>.yaml   # gitignored; fill in values
+#   kubectl apply --server-side -f templates/cms-admin-configmap-<app-env>.yaml
+# metadata.name is fixed (cms-admin-config); metadata.namespace is the environment's namespace, the same
+# one as the shared ConfigMap.
 # Derived names: namespace <APP_NAMESPACE>-<APP_ENV>, resources <APP_SERVICE_NAME>-<APP_ENV>.
 # No APP_PORT: nginx listens on 80, an image fact (apps/cms-admin/deployment.yaml).
 # The cms-api URL is NOT here: it's baked into the image at build time from the CMS_ADMIN_API_URL
 # variable in the app repository. Quote every value: ConfigMap data must be strings. After a change,
-# re-apply and run `flux reconcile kustomization <APP_NAME>-cms-admin-sync-<APP_ENV>`.
+# re-apply and run `flux -n <APP_NAMESPACE>-<APP_ENV> reconcile kustomization cms-admin-sync`.
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: <app-name>-<app-service-name>-<app-env>-config
-  namespace: flux-system
+  name: cms-admin-config
+  namespace: <app-namespace>-<app-env>
 data:
   # Service within the application (resources are named <APP_SERVICE_NAME>-<APP_ENV>)
   APP_SERVICE_NAME: "<app-service-name>"
