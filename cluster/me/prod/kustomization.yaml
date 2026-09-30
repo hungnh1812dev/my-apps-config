@@ -5,7 +5,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: project-me-prod
 resources:
-  - flux-system
+  - project-me-prod
   - ../../../cluster-base
 patches:
   # `flux bootstrap --namespace=project-me-prod` names the GitRepository project-me-prod, not flux-system.

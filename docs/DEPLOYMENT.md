@@ -379,6 +379,10 @@ below it, including the other environment's `flux-system/`.
    kubectl -n flux-system get kustomizations
    ```
 
+   Do steps 2–3 before bootstrapping. While the old instance runs, its source-controller (watching
+   all namespaces) also serves the new GitRepository, and the new root Kustomization fails with
+   `failed to download archive: GET http://source-controller.flux-system.svc... connection refused`.
+
 2. **Freeze the old instance.** Nothing is deleted from the apps while it's suspended:
 
    ```bash

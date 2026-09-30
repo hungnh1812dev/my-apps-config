@@ -15,14 +15,16 @@ Another project (another config repository) bootstraps the same way into `<proje
 
 | Resource | Name | Defined in | What it does |
 |---|---|---|---|
-| Flux controllers | source-controller, kustomize-controller | `cluster/me/<env>/flux-system/gotk-components.yaml` | The Flux v2.9.5 install. Generated, don't edit |
+| Flux controllers | source-controller, kustomize-controller | `cluster/me/<env>/<ns>/gotk-components.yaml` | The Flux v2.9.5 install. Generated, don't edit |
 | Secret | `flux-system` | created by `flux bootstrap` (not in git) | SSH deploy key for GitHub |
-| GitRepository | `<ns>` | `cluster/me/<env>/flux-system/gotk-sync.yaml` | Polls the environment's branch every 1m |
-| Kustomization | `<ns>` | `cluster/me/<env>/flux-system/gotk-sync.yaml` | The root: applies `./cluster/me/<env>` every 10m |
+| GitRepository | `<ns>` | `cluster/me/<env>/<ns>/gotk-sync.yaml` | Polls the environment's branch every 1m |
+| Kustomization | `<ns>` | `cluster/me/<env>/<ns>/gotk-sync.yaml` | The root: applies `./cluster/me/<env>` every 10m |
 | Kustomization | `cms-api-sync`, `cms-admin-sync`, `frontend-sync` | `cluster-base/<svc>-sync.yaml` + `cluster/me/<env>/<svc>-sync-overlay.yaml` | Applies `./apps/<svc>` |
 
 `flux bootstrap --namespace=<ns>` names the GitRepository and the root Kustomization `<ns>`, not
-`flux-system`. `cluster/me/<env>/kustomization.yaml` patches the sync files' `sourceRef` to match.
+`flux-system`, and writes its files to `cluster/me/<env>/<ns>/`, not `flux-system/`.
+`cluster/me/<env>/kustomization.yaml` lists `<ns>` as a resource and patches the sync files'
+`sourceRef` to match.
 
 ## How it fits together
 
@@ -34,7 +36,7 @@ GitRepository project-me-staging          GitRepository project-me-prod
   ▼                                         ▼
 Kustomization project-me-staging          Kustomization project-me-prod
   path ./cluster/me/staging                 path ./cluster/me/prod
-  ├── flux-system/  (Flux manages itself)   ├── flux-system/
+  ├── project-me-staging/ (Flux itself)     ├── project-me-prod/
   ├── ../../../cluster-base                 ├── ../../../cluster-base
   │     cms-api-sync ──► apps/cms-api       │     (same three sync files)
   │     cms-admin-sync ─► apps/cms-admin    │
@@ -65,14 +67,14 @@ The flags that make instances independent:
 | `--branch`, `--path` | Must match the table above. Any other path rewrites `gotk-sync.yaml` and the apps are no longer applied |
 
 `gotk-components.yaml` and `gotk-sync.yaml` are generated. Never copy them from another environment:
-they carry the namespace, branch and flags. `flux-system/kustomization.yaml` is hand-written and kept
+they carry the namespace, branch and flags. `<ns>/kustomization.yaml` is hand-written and kept
 by bootstrap.
 
 ## Rules for several instances on one cluster
 
 - **One Flux version for all instances.** The CRDs are cluster-wide and every instance applies them.
   Upgrade every instance on the cluster together ([DEPLOYMENT.md](../DEPLOYMENT.md#13-upgrading-flux)).
-- **CRDs are never pruned.** `flux-system/kustomization.yaml` marks them
+- **CRDs are never pruned.** `<ns>/kustomization.yaml` marks them
   `kustomize.toolkit.fluxcd.io/prune: disabled`, so removing one instance can't delete the CRDs, which
   would delete every other instance's GitRepositories and Kustomizations.
 - **Never run `flux uninstall`** on a shared cluster: it deletes the CRDs. Remove one instance as
