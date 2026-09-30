@@ -1,0 +1,29 @@
+# cms-admin: applies ./apps/cms-admin with ${APP_*} from the shared ConfigMap, then the cms-admin ConfigMap
+# (a key in both takes the cms-admin value). Environment-free: cluster/me/<env>/ puts it in the Flux
+# namespace, points sourceRef at that namespace's GitRepository and adds APP_IMAGE_TAG.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: cms-admin-sync
+spec:
+  interval: 3m
+  # A failed apply is retried sooner than the next interval.
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    # Replaced per environment: `flux bootstrap --namespace=<ns>` names the GitRepository <ns>.
+    name: flux-system
+  # Includes the public Traefik Ingress at admin.<domain>. Needs APP_DOMAIN and
+  # APP_TLS_CLUSTER_ISSUER in the shared ConfigMap before this reaches the cluster.
+  path: ./apps/cms-admin
+  prune: true
+  wait: true
+  timeout: 5m
+  postBuild:
+    # Both ConfigMaps must exist in the Flux namespace: a missing one fails the Kustomization
+    # instead of rendering empty names.
+    substituteFrom:
+      - kind: ConfigMap
+        name: shared-config
+      - kind: ConfigMap
+        name: cms-admin-config

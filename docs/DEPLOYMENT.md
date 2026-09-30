@@ -8,7 +8,8 @@ Placeholders used throughout:
 | Placeholder | Meaning | Example |
 |---|---|---|
 | `<domain>` | Bare domain (`APP_DOMAIN`) | `example.com` |
-| `<ns>` | App namespace, `<APP_NAMESPACE>-<APP_ENV>` | `project-me-prod` |
+| `<ns>` | Environment namespace (Flux + apps), `<APP_NAMESPACE>-<APP_ENV>` | `project-me-prod`, `project-me-staging` |
+| `<env>` / `<branch>` | Environment and its branch | `staging` / `staging`, `prod` / `main` |
 | `<name>` | `<APP_SERVICE_NAME>-<APP_ENV>` for one service | `cms-api-prod` |
 | `<vps-ip>` | Public IP of the server | |
 
@@ -105,9 +106,18 @@ dig +short <domain> admin.<domain> api.<domain>
 
 ## 5. Install the Flux CLI and bootstrap
 
-Install the CLI at the version already committed in `gotk-components.yaml` (v2.9.5). Bootstrap
-writes the components for the CLI's own version, so a newer CLI would upgrade Flux as a side
-effect. Upgrade on purpose later with step 13.
+Each environment is its own Flux instance, installed into the environment's namespace and watching
+only that namespace. Several instances (other environments, other projects) can share one k3s. See
+[components/flux-system.md](components/flux-system.md) for why each flag is there.
+
+| Environment | `<ns>` | `--branch` | `--path` |
+|---|---|---|---|
+| staging | `project-me-staging` | `staging` | `cluster/me/staging` |
+| prod | `project-me-prod` | `main` | `cluster/me/prod` |
+
+Install the CLI at the version already committed in `gotk-components.yaml` (v2.9.5), and use the
+same version for every instance on the cluster: the CRDs are shared. Bootstrap writes the
+components for the CLI's own version, so a newer CLI would upgrade Flux as a side effect.
 
 ```bash
 curl -s https://fluxcd.io/install.sh | sudo FLUX_VERSION=2.9.5 bash
@@ -115,74 +125,66 @@ flux --version
 flux check --pre
 ```
 
-Before bootstrapping, create the `flux-system` namespace and the shared ConfigMap. The root
-Kustomization reads it to name the app Kustomizations, and fails without it:
-
-```bash
-kubectl create namespace flux-system
-cp templates/shared-configmap.example.yaml templates/shared-configmap.yaml
-# Set APP_NAME, APP_NAMESPACE, APP_ENV, APP_DOMAIN, APP_TLS_CLUSTER_ISSUER. Keep metadata.name: shared-config.
-kubectl apply --server-side -f templates/shared-configmap.yaml
-```
-
-Bootstrap. This installs the controllers, creates an SSH deploy key on the GitHub repository,
-stores its private half in the `flux-system` Secret, and points Flux at `cluster/me`:
+The branch must exist and contain `cluster/me/<env>/` before you bootstrap. Then, per environment:
 
 ```bash
 export GITHUB_TOKEN=<personal-access-token>
 flux bootstrap github \
   --owner=hungnh1812dev \
   --repository=project-me-config \
-  --branch=main \
-  --path=cluster/me \
+  --branch=<branch> \
+  --path=cluster/me/<env> \
+  --namespace=<ns> \
+  --watch-all-namespaces=false \
+  --network-policy=false \
+  --components=source-controller,kustomize-controller \
   --personal
 ```
 
-- `--path=cluster/me` is required. Any other path rewrites `gotk-sync.yaml`, and the apps are
-  no longer applied.
-- If the generated files differ from the committed ones (for example, the `url` without `.git`),
-  bootstrap commits the difference to `main`. Run `git pull` afterwards.
+- Keep every flag on re-runs (upgrades, key rotation). Bootstrap regenerates `gotk-*.yaml` from the
+  flags, so a missing flag silently changes the install.
+- Bootstrap creates `<ns>`, a deploy key per instance on the GitHub repository, and the `flux-system`
+  Secret in `<ns>`. It commits `gotk-components.yaml` and `gotk-sync.yaml` to `<branch>` if they
+  differ from what's there. Run `git pull` afterwards.
 - The token is only used during bootstrap. Flux itself uses the deploy key, which is read-only.
 
-The three app Kustomizations are created now and **fail until steps 6–8 are done** (missing
-ConfigMap, namespace or Secret). That's expected. They retry every minute.
+The three app Kustomizations are created now and **fail until steps 7–8 are done** (missing
+ConfigMap or Secret). That's expected. They retry every minute.
 
 ```bash
-flux get kustomizations -n flux-system
+flux -n <ns> get kustomizations
 ```
 
-## 6. Create the namespace
+## 6. Check the namespace
 
-All three apps share one namespace, and Flux doesn't create it ([AUDIT.md](AUDIT.md), finding 8).
-Use the same `APP_NAMESPACE` and `APP_ENV` values you'll put in the ConfigMaps:
+Bootstrap created `<ns>`, and Flux, the ConfigMaps, the Secrets and all three apps live there.
+`APP_NAMESPACE`-`APP_ENV` in step 7 must produce exactly this name.
 
 ```bash
-kubectl create namespace <ns>
+kubectl get namespace <ns>
+kubectl -n <ns> get deploy          # source-controller, kustomize-controller
 ```
 
-## 7. Apply the per-app ConfigMaps
+## 7. Apply the ConfigMaps
 
-These hold the `${APP_*}` values Flux substitutes into the manifests. They go in `flux-system`.
-The shared one (`shared-config`) was applied in step 5. Every sync file reads it first, then its
-own per-app ConfigMap.
+These hold the `${APP_*}` values Flux substitutes into the manifests. They go in `<ns>`, under fixed
+names: `shared-config`, then one per app (`cms-api-config`, `cms-admin-config`, `frontend-config`).
+Every sync file reads the shared one first, then its own.
 
 ```bash
+cp templates/shared-configmap.example.yaml templates/shared-configmap-<env>.yaml
 for svc in cms-api cms-admin frontend; do
-  cp templates/$svc-configmap.example.yaml templates/$svc-configmap.yaml
+  cp templates/$svc-configmap.example.yaml templates/$svc-configmap-<env>.yaml
 done
-# Per-app copies: set APP_SERVICE_NAME (cms-api, cms-admin, frontend), APP_IMAGE_REPO,
-#   APP_PORT (cms-api and frontend; "3000" for frontend), and metadata.name to
-#   <APP_NAME>-<svc>-<APP_ENV>-config (e.g. project-me-cms-api-prod-config).
-kubectl apply --server-side -f templates/cms-api-configmap.yaml
-kubectl apply --server-side -f templates/cms-admin-configmap.yaml
-kubectl apply --server-side -f templates/frontend-configmap.yaml
-```
-
-Check that the names match what the sync files read:
-
-```bash
-kubectl -n flux-system get configmap shared-config \
-  project-me-cms-api-prod-config project-me-cms-admin-prod-config project-me-frontend-prod-config
+# Set metadata.namespace to <ns> in all four.
+# Shared: APP_NAME, APP_NAMESPACE + APP_ENV (together = <ns>), APP_DOMAIN (different per environment,
+#   e.g. staging.<domain>), APP_TLS_CLUSTER_ISSUER.
+# Per app: APP_SERVICE_NAME (cms-api, cms-admin, frontend), APP_IMAGE_REPO,
+#   APP_PORT (cms-api and frontend; "3000" for frontend).
+for f in shared cms-api cms-admin frontend; do
+  kubectl apply --server-side -f templates/$f-configmap-<env>.yaml
+done
+kubectl -n <ns> get configmap shared-config cms-api-config cms-admin-config frontend-config
 ```
 
 Every variable is described in [components/configuration.md](components/configuration.md).
@@ -235,15 +237,15 @@ Pods created after the patch use it. Delete any pod already in `ImagePullBackOff
 Trigger a reconcile instead of waiting for the next retry:
 
 ```bash
-flux reconcile kustomization flux-system --with-source
-flux reconcile kustomization project-me-cms-api-sync-prod
-flux reconcile kustomization project-me-cms-admin-sync-prod
-flux reconcile kustomization project-me-frontend-sync-prod
-flux get kustomizations -n flux-system       # all four READY True
+flux -n <ns> reconcile kustomization <ns> --with-source
+flux -n <ns> reconcile kustomization cms-api-sync
+flux -n <ns> reconcile kustomization cms-admin-sync
+flux -n <ns> reconcile kustomization frontend-sync
+flux -n <ns> get kustomizations              # all four READY True
 ```
 
-cms-admin and frontend start with `APP_IMAGE_TAG: "dev"`. If there's no `dev` tag in the
-registry, they stay not Ready until the app repository commits a real tag (step 11).
+If a tag in `cluster/me/<env>/<svc>-sync-overlay.yaml` doesn't exist in the registry (e.g. `dev`),
+that app stays not Ready until the app repository commits a real tag (step 11).
 
 Check the workloads and certificates:
 
@@ -264,38 +266,39 @@ curl -I http://<domain>                      # 301/308 redirect to https
 ## 11. Update image tags from the app repository
 
 Normally this is automatic. The app repository's pipeline pushes an image, rewrites the
-`APP_IMAGE_TAG:` line in `cluster/me/<svc>-sync.yaml`, and commits to `main`. Flux fetches
-`main` every minute and rolls out the new tag. The rules the pipeline must follow are in
+`APP_IMAGE_TAG:` line in `cluster/me/<env>/<svc>-sync-overlay.yaml`, and commits it to that
+environment's branch (`staging` or `main`). Flux fetches the branch every minute and rolls out the
+new tag. The rules the pipeline must follow are in
 [components/configuration.md](components/configuration.md#image-tag-contract-with-the-app-repository).
 
-To deploy a tag by hand, make the same change:
+To deploy a tag by hand, make the same change on the environment's branch:
 
 ```bash
-sed -i -E 's/^( *APP_IMAGE_TAG: ).*/\1"<tag>"/' cluster/me/cms-api-sync.yaml   # macOS: sed -i ''
-git commit -am "deploy(cms-api): <tag>" && git push
-flux reconcile kustomization flux-system --with-source      # optional: don't wait for the poll
+sed -i -E 's/^( *APP_IMAGE_TAG: ).*/\1"<tag>"/' cluster/me/<env>/cms-api-sync-overlay.yaml   # macOS: sed -i ''
+git commit -am "deploy(cms-api, <env>): <tag>" && git push
+flux -n <ns> reconcile kustomization <ns> --with-source      # optional: don't wait for the poll
 kubectl -n <ns> rollout status deploy/<name>
 ```
 
 ## 12. Rollback
 
-**Normal path:** revert the tag commit. Git stays the source of truth, and Flux rolls back on its
-next poll.
+**Normal path:** revert the tag commit on the environment's branch. Git stays the source of truth,
+and Flux rolls back on its next poll.
 
 ```bash
-git log --oneline -- cluster/me/cms-api-sync.yaml
+git log --oneline -- cluster/me/<env>/cms-api-sync-overlay.yaml
 git revert <commit> && git push
-flux reconcile kustomization flux-system --with-source
+flux -n <ns> reconcile kustomization <ns> --with-source
 ```
 
 **Emergency path:** roll back on the cluster first, then fix git. Suspend the app's Kustomization,
 or Flux will reapply the bad tag within minutes:
 
 ```bash
-flux suspend kustomization project-me-cms-api-sync-prod
+flux -n <ns> suspend kustomization cms-api-sync
 kubectl -n <ns> rollout undo deploy/<name>
 # ...revert the tag commit in git as above, then:
-flux resume kustomization project-me-cms-api-sync-prod
+flux -n <ns> resume kustomization cms-api-sync
 ```
 
 **cms-api:** rolling back the image doesn't roll back database migrations. Only roll back past a
@@ -303,35 +306,35 @@ migration if it's backward-compatible ([components/cms-api.md](components/cms-ap
 
 ## 13. Upgrading Flux
 
-Read the release notes for API changes first (<https://github.com/fluxcd/flux2/releases>). Then
-install the new CLI and re-run the same bootstrap command as in step 5. Bootstrap regenerates
-`gotk-components.yaml` for the new version, commits it, and the controllers upgrade themselves.
+The CRDs are shared by every Flux instance on the cluster, so upgrade all of them together, other
+projects included. Read the release notes for API changes first
+(<https://github.com/fluxcd/flux2/releases>). Then install the new CLI and re-run the step 5 bootstrap
+command, with the same flags, for each instance. Bootstrap regenerates `gotk-components.yaml` for
+the new version, commits it, and the controllers upgrade themselves.
 
 ```bash
 curl -s https://fluxcd.io/install.sh | sudo FLUX_VERSION=<new-version> bash   # no leading "v"
-export GITHUB_TOKEN=<personal-access-token>
-flux bootstrap github --owner=hungnh1812dev --repository=project-me-config \
-  --branch=main --path=cluster/me --personal
-flux check
+# re-run the step 5 bootstrap for staging, then prod, then every other instance on the cluster
+flux -n <ns> check
 git pull
 ```
 
-To review the change before it's applied, write the files locally and open a PR instead:
-
-```bash
-flux install --export > cluster/me/flux-system/gotk-components.yaml
-git diff --stat   # review, commit, push
-```
+Upgrade staging first and merge the regenerated file forward only after it's healthy. The prod
+instance's file is on `main` and is regenerated by the prod bootstrap, not by the merge.
 
 ## 14. Troubleshooting
 
 | Symptom | Likely cause | Check / fix |
 |---|---|---|
-| `flux get sources git` not Ready, auth error | Deploy key removed from GitHub | Re-run the step 5 bootstrap to recreate it |
-| `flux-system` Kustomization: path not found | Bootstrapped with a different `--path` | Re-run bootstrap with `--path=cluster/me` |
-| App Kustomization: `ConfigMap ... not found` | Step 7 skipped or wrong name | `kubectl -n flux-system get cm`; names must be `shared-config` and `<APP_NAME>-<svc>-<APP_ENV>-config` |
-| App Kustomization: `namespaces "<ns>" not found` | Step 6 skipped, or namespace doesn't match the ConfigMap | `kubectl get ns`; compare with `APP_NAMESPACE`-`APP_ENV` |
+| `flux -n <ns> get sources git` not Ready, auth error | Deploy key removed from GitHub | Re-run the step 5 bootstrap to recreate it |
+| Root Kustomization: path not found | Bootstrapped with a different `--path`, or the branch lacks `cluster/me/<env>` | Re-run bootstrap with the table's `--branch`/`--path` |
+| App Kustomization: `GitRepository ... not found` | `sourceRef` patch in `cluster/me/<env>/kustomization.yaml` doesn't match `<ns>` | The GitRepository is named after the bootstrap namespace |
+| App Kustomization: `ConfigMap ... not found` | Step 7 skipped, wrong name or wrong namespace | `kubectl -n <ns> get cm`; names must be `shared-config` and `<svc>-config` |
+| Resources go to the wrong namespace | `APP_NAMESPACE`-`APP_ENV` doesn't equal `<ns>` | Fix `shared-config`, re-apply, reconcile |
+| Objects reconciled twice / status flapping | Another Flux instance watches all namespaces | `kubectl get deploy -A -l app.kubernetes.io/part-of=flux -o yaml \| grep watch-all`; every instance needs `--watch-all-namespaces=false` |
+| Sites time out, pods Ready | A Flux NetworkPolicy in `<ns>` blocks Traefik | `kubectl -n <ns> get networkpolicy`; bootstrap with `--network-policy=false` |
 | Ingress rejected: host `api.` / `admin.` / `APP_DOMAIN-is-not-set` | `APP_DOMAIN` missing from the ConfigMap | Set it, re-apply, reconcile |
+| Two environments fight over one host | Same `APP_DOMAIN` in staging and prod | Give staging its own domain |
 | Pod `CreateContainerConfigError`, Secret not found | Step 8 skipped or Secret name/namespace wrong | `kubectl -n <ns> get secret`; name must be `<name>-secrets` |
 | Pod `ImagePullBackOff` | Tag doesn't exist (e.g. `dev`), or private image without a pull secret | `kubectl -n <ns> describe pod`; commit a real tag or do step 9 |
 | cms-api pod stuck in `Init:CrashLoopBackOff` | `prisma migrate deploy` failed (DB unreachable or bad credentials) | `kubectl -n <ns> logs <pod> -c init` |
@@ -339,6 +342,67 @@ git diff --stat   # review, commit, push
 | Certificate not Ready | DNS not resolving yet, or port 80 blocked | `kubectl -n <ns> describe challenge`; check step 4 and the firewall |
 | Browser: cms-admin API calls blocked (CORS) | `CORS_ORIGINS` doesn't include `https://admin.<domain>` | Fix the cms-api Secret, re-apply, `rollout restart` |
 | Secret changed but the app still uses old values | Pods read `envFrom` only at start | `kubectl -n <ns> rollout restart deploy/<name>` |
-| ConfigMap changed but nothing happened | Flux hasn't re-rendered yet | `flux reconcile kustomization project-me-<svc>-sync-prod` |
+| ConfigMap changed but nothing happened | Flux hasn't re-rendered yet | `flux -n <ns> reconcile kustomization <svc>-sync` |
 | Manual `kubectl edit` is reverted | Flux re-applies git every 3m | Change it in git, or `flux suspend` first |
-| App Kustomization times out (5m) while pods look fine | A resource isn't healthy (`wait: true`) | `flux get kustomizations`; `kubectl -n <ns> get events --sort-by=.lastTimestamp` |
+| App Kustomization times out (5m) while pods look fine | A resource isn't healthy (`wait: true`) | `flux -n <ns> get kustomizations`; `kubectl -n <ns> get events --sort-by=.lastTimestamp` |
+
+## 15. Removing one instance
+
+Never run `flux uninstall` on a shared cluster: it deletes the CRDs, and with them every other
+instance's Flux objects. To remove one environment and everything it deployed:
+
+```bash
+flux -n <ns> suspend kustomization --all
+kubectl -n <ns> delete kustomizations.kustomize.toolkit.fluxcd.io --all   # suspended: nothing is pruned
+kubectl -n <ns> delete gitrepositories.source.toolkit.fluxcd.io --all
+kubectl delete clusterrolebinding,clusterrole -l app.kubernetes.io/instance=<ns>
+kubectl delete namespace <ns>                                             # the apps go with it
+```
+
+Then delete the instance's deploy key under the repository's Settings → Deploy keys on GitHub.
+To keep the apps running and only remove Flux, delete the Flux Deployments instead of the namespace:
+`kubectl -n <ns> delete deploy -l app.kubernetes.io/part-of=flux`.
+
+## 16. Migrating from the single `flux-system` instance
+
+Before this layout, prod ran one Flux in `flux-system` (path `./cluster/me`, branch `main`, watching
+all namespaces), and staging was bootstrapped the same way on the `staging` branch. Move each to its
+own instance **before** the new layout reaches `main` or `staging`: the old root Kustomization reads
+`./cluster/me`, which no longer has a `kustomization.yaml`, so Flux would generate one from every file
+below it, including the other environment's `flux-system/`.
+
+1. **Check which branch the cluster's `flux-system` follows.** If both environments share one k3s
+   and staging was bootstrapped into `flux-system`, the prod cluster now follows `staging`:
+
+   ```bash
+   kubectl -n flux-system get gitrepository flux-system -o jsonpath='{.spec.ref.branch}{"\n"}'
+   kubectl -n flux-system get kustomizations
+   ```
+
+2. **Freeze the old instance.** Nothing is deleted from the apps while it's suspended:
+
+   ```bash
+   flux -n flux-system suspend kustomization --all
+   ```
+
+3. **Remove the old instance, keeping the apps and the CRDs:**
+
+   ```bash
+   kubectl -n flux-system delete kustomizations.kustomize.toolkit.fluxcd.io --all   # suspended: nothing is pruned
+   kubectl -n flux-system delete gitrepositories.source.toolkit.fluxcd.io --all
+   kubectl delete clusterrolebinding,clusterrole -l app.kubernetes.io/instance=flux-system
+   kubectl delete namespace flux-system
+   ```
+
+   Delete the old deploy keys on GitHub (Settings → Deploy keys).
+
+4. **Push the new layout** to `staging` and `main` (merge `develop`). Nothing reconciles it yet.
+
+5. **Bootstrap each environment** (step 5). The existing namespace `project-me-<env>` is adopted,
+   and the apps keep their names (`<svc>-<env>`), so running pods are adopted, not recreated.
+
+6. **Recreate the ConfigMaps in `<ns>`** under the new names (step 7). Values are unchanged; only the
+   name and namespace differ (`project-me-cms-api-prod-config` in `flux-system` becomes
+   `cms-api-config` in `project-me-prod`). Secrets stay where they are.
+
+7. **Verify** (step 10) for each environment.

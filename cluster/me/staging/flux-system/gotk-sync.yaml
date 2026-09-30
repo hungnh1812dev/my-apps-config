@@ -3,25 +3,25 @@
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
-  name: flux-system
-  namespace: flux-system
+  name: project-me-staging
+  namespace: project-me-staging
 spec:
   interval: 1m0s
   ref:
-    branch: main
+    branch: staging
   secretRef:
     name: flux-system
-  url: ssh://git@github.com/hungnh1812dev/project-me-config.git
+  url: ssh://git@github.com/hungnh1812dev/project-me-config
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: flux-system
-  namespace: flux-system
+  name: project-me-staging
+  namespace: project-me-staging
 spec:
   interval: 10m0s
-  path: ./cluster/me
+  path: ./cluster/me/staging
   prune: true
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: project-me-staging

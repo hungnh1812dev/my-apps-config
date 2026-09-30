@@ -4,9 +4,10 @@ The CMS admin UI: a static single-page app served by nginx. It runs entirely in 
 calls cms-api at `api.<domain>`.
 
 - **Base:** `apps/cms-admin/`
-- **Flux Kustomization:** `project-me-cms-admin-sync-prod` (`cluster/me/cms-admin-sync.yaml`)
-- **ConfigMaps:** `project-me-prod-shared-config` (template `templates/shared-configmap.example.yaml`)
-  and `project-me-cms-admin-prod-config` (template `templates/cms-admin-configmap.example.yaml`)
+- **Flux Kustomization:** `cms-admin-sync` in the environment's namespace (`cluster-base/cms-admin-sync.yaml`,
+  image tag in `cluster/me/<env>/cms-admin-sync-overlay.yaml`)
+- **ConfigMaps:** `shared-config` (template `templates/shared-configmap.example.yaml`)
+  and `cms-admin-config` (template `templates/cms-admin-configmap.example.yaml`), both in `<ns>`
 - **Secret:** none
 
 Names below use `<name>` for `<APP_SERVICE_NAME>-<APP_ENV>` (see

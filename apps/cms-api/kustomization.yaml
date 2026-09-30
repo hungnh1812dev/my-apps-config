@@ -1,8 +1,8 @@
-# cms-api's k8s resources, applied by the Flux Kustomization in cluster/me/cms-api-sync.yaml.
-# Every ${APP_*} placeholder is substituted by Flux (postBuild) from the project-me-prod-shared-config
-# and project-me-cms-api-prod-config ConfigMaps (templates: templates/shared-configmap.example.yaml,
-# templates/cms-api-configmap.example.yaml), plus APP_IMAGE_TAG from the sync file, which the app
-# repository updates on main. No project values live here.
+# cms-api's k8s resources, applied by the Flux Kustomization cms-api-sync (cluster-base/cms-api-sync.yaml).
+# Every ${APP_*} placeholder is substituted by Flux (postBuild) from the shared-config and cms-api-config
+# ConfigMaps in the environment's namespace (templates: templates/shared-configmap.example.yaml,
+# templates/cms-api-configmap.example.yaml), plus APP_IMAGE_TAG from cluster/me/<env>/cms-api-sync-overlay.yaml,
+# which the app repository updates. No project values live here.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
