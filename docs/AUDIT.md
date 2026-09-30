@@ -167,8 +167,8 @@ A failed apply waited for the next full `interval` (3m) before retrying.
 ### 12. frontend has no `dependsOn` — Low, Recommended against
 
 It was considered and rejected. The frontend's probes are designed to tolerate cms-api being down:
-liveness is only a TCP check, and `/api/health` always returns 200. A `dependsOn` would block
-every frontend deploy while cms-api's Kustomization is not Ready, for example after a bad cms-api
+liveness (`/api/health/live`) never calls cms-api, and `/api/health/ready` always returns 200. A
+`dependsOn` would block every frontend deploy while cms-api's Kustomization is not Ready, for example after a bad cms-api
 tag. The reasoning is recorded in a comment in `cluster/me/frontend-sync.yaml`.
 
 ### 13. No image pull secret — Low, Documented
