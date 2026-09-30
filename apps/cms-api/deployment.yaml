@@ -62,7 +62,7 @@ spec:
               containerPort: ${APP_PORT}
           envFrom:
             - secretRef:
-                name: ${APP_SERVICE_NAME}-${APP_ENV}-secrets
+                name: ${APP_SERVICE_NAME}-secrets
           # cms-api serves /health outside the api/v1 prefix.
           livenessProbe:
             httpGet:
